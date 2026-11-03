@@ -1,4 +1,5 @@
 const std = @import("std");
+const DTB = @import("DTB.zig");
 
 comptime {
     asm (
@@ -35,5 +36,44 @@ fn print(s: []const u8) void {
 }
 
 pub export fn kernel_main() void {
-    print("Hello world!\n");
+    const dtb: DTB = .{
+        .ptr = @ptrFromInt(0x4000_0000),
+    };
+    if (!dtb.validate()) {
+        return;
+    }
+    var iter = dtb.struct_tokens();
+    var indent: u32 = 0;
+    while (true) {
+        const token = iter.next();
+        switch (token) {
+            .begin_node => {
+                for (0..indent) |_| {
+                    print("  ");
+                }
+                const name = iter.node_name();
+                print(name);
+                print(" {\n");
+                indent += 1;
+            },
+            .end => break,
+            .end_node => {
+                indent -= 1;
+                for (0..indent) |_| {
+                    print("  ");
+                }
+                print("}\n");
+            },
+            .nop => {},
+            .prop => {
+                for (0..indent) |_| {
+                    print("  ");
+                }
+                const meta = iter.prop_meta();
+                print("{name_placeholder}: ");
+                print(meta.value);
+                print("\n");
+            },
+        }
+    }
 }
