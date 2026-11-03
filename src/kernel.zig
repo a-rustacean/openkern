@@ -4,8 +4,19 @@ comptime {
     asm (
         \\ .global _start
         \\ _start:
+
+        // Setup stack
         \\     ldr x30, =stack_top
         \\     mov sp, x30
+
+        // Enable FP/NEON
+        \\     mrs x9, cpacr_el1
+        \\     mov x10, #0x300000
+        \\     orr x9, x9, x10
+        \\     msr cpacr_el1, x9
+        \\     isb
+
+        // Enter kernel_main
         \\     bl kernel_main
         \\     b .
     );

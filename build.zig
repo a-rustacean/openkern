@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         .cpu_model = .{
             .explicit = &std.Target.aarch64.cpu.cortex_a57,
         },
+        .cpu_features_add = std.Target.aarch64.featureSet(&.{.strict_align}),
     });
     const optimize = b.standardOptimizeOption(.{});
 
