@@ -1,0 +1,12 @@
+.{
+    .name = .openkern,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{},
+    .fingerprint = 0xeb82c4726deb86dc,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -1,0 +1,3 @@
+- https://www.qemu.org/docs/master/system/arm/virt
+- https://wiki.osdev.org/QEMU_AArch64_Virt_Bare_Bones
+- https://devicetree-specification.readthedocs.io/en/latest/chapter5-flattened-format.html
