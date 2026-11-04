@@ -35,6 +35,13 @@ fn print(s: []const u8) void {
     }
 }
 
+fn fmtPrintString(string: []const u8) void {
+    var buf: [4096]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+    std.zig.fmtString(string).format(&writer) catch unreachable;
+    print(buf[0..(writer.end)]);
+}
+
 pub export fn kernel_main() void {
     const dtb: DTB = .{
         .ptr = @ptrFromInt(0x4000_0000),
@@ -70,8 +77,10 @@ pub export fn kernel_main() void {
                     print("  ");
                 }
                 const meta = iter.prop_meta();
-                print("{name_placeholder}: ");
-                print(meta.value);
+                const name = dtb.string(meta.name_offset);
+                print(name);
+                print(": ");
+                fmtPrintString(meta.value);
                 print("\n");
             },
         }

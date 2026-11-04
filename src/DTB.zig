@@ -97,6 +97,11 @@ pub fn struct_tokens(dtb: *const @This()) Token.Iterator {
     };
 }
 
+pub fn string(dtb: *const @This(), offset: u32) [:0]const u8 {
+    const total_offset: usize = @intCast(dtb.header(.off_dt_strings) + offset);
+    return mem.sliceTo(dtb.ptr + total_offset, 0);
+}
+
 pub const ReserveEntry = struct {
     address: u64,
     size: u64,
