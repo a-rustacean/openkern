@@ -32,6 +32,98 @@ pub fn validate(dtb: *const @This()) bool {
         dtb.header(.last_comp_version) >= LAST_COMPAT;
 }
 
+pub const NodeRef = struct {
+    offset: u32,
+};
+
+pub fn findNode(dtb: *const @This(), path: []const u8) ?NodeRef {
+    var iter = dtb.struct_tokens();
+    var path_iter = mem.splitScalar(u8, path, '/');
+    _ = path_iter.next();
+
+    var current_level_target_node = path_iter.next().?;
+    var skip_depth: u32 = 0;
+
+    while (true) {
+        const cursor_usize = @intFromPtr(iter.cursor);
+        const cursor: u32 = @intCast(cursor_usize);
+        const offset = cursor - dtb.header(.off_dt_struct);
+        const token = iter.next();
+
+        switch (token) {
+            .nop => {},
+            .end => {
+                return null;
+            },
+            .begin_node => {
+                const name = iter.node_name();
+                if (skip_depth != 0) {
+                    skip_depth += 1;
+                }
+                if (mem.eql(u8, name, current_level_target_node)) {
+                    if (path_iter.next()) |child_target| {
+                        current_level_target_node = child_target;
+                    } else {
+                        return .{ .offset = offset };
+                    }
+                } else {
+                    skip_depth += 1;
+                }
+            },
+            .end_node => {
+                if (skip_depth == 0) {
+                    return null;
+                } else {
+                    skip_depth -= 1;
+                }
+            },
+            .prop => {
+                _ = iter.prop_meta();
+            },
+        }
+    }
+}
+
+pub fn getProperty(dtb: *const DTB, node: NodeRef, property: []const u8) ?[]const u8 {
+    var iter: Token.Iterator = .{
+        .cursor = @ptrFromInt(dtb.header(.off_dt_struct) + node.offset),
+    };
+    const token1 = iter.next();
+    std.debug.assert(token1 == .begin_node);
+    _ = iter.node_name();
+
+    var skip_depth: u32 = 0;
+
+    while (true) {
+        const token = iter.next();
+
+        switch (token) {
+            .nop => {},
+            .end => {
+                return null;
+            },
+            .begin_node => {
+                skip_depth += 1;
+            },
+            .end_node => {
+                if (skip_depth == 0) {
+                    return null;
+                } else {
+                    skip_depth -= 1;
+                }
+            },
+            .prop => {
+                const meta = iter.prop_meta();
+                if (skip_depth != 0) continue;
+                const name = dtb.string(meta.name_offset);
+                if (mem.eql(u8, name, property)) {
+                    return meta.value;
+                }
+            },
+        }
+    }
+}
+
 pub const Token = struct {
     pub const Kind = enum(u32) {
         begin_node = 1,
