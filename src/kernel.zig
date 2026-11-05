@@ -1,35 +1,6 @@
 const std = @import("std");
 const DTB = @import("DTB.zig");
 
-export var stack_bytes: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
-
-export fn _start() callconv(.naked) noreturn {
-    asm volatile (
-        \\ adrp x8, stack_bytes
-        \\ add x8, x8, #:lo12:stack_bytes
-        \\ add x8, x8, %[stack_size]
-        \\ mov sp, x8
-
-        // Enable FP/NEON
-        \\ mrs x9, cpacr_el1
-        \\ mov x10, #0x300000
-        \\ orr x9, x9, x10
-        \\ msr cpacr_el1, x9
-        \\ isb
-
-        // Enter kernel_main
-        \\ bl kernel_main
-        \\ 1: b 1b
-        :
-        : [stack_size] "r" (stack_bytes.len),
-        : .{
-          .x8 = true,
-          .x9 = true,
-          .x10 = true,
-          .memory = true,
-        });
-}
-
 const uart: *volatile u8 = @ptrFromInt(0x0900_0000);
 
 fn putchar(c: u8) void {
