@@ -1,26 +1,32 @@
 const std = @import("std");
 const DTB = @import("DTB.zig");
 
-comptime {
-    asm (
-        \\ .global _start
-        \\ _start:
+export var stack_bytes: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
 
-        // Setup stack
-        \\     ldr x30, =stack_top
-        \\     mov sp, x30
+export fn _start() callconv(.naked) noreturn {
+    const stack_top = @intFromPtr(&stack_bytes) +% stack_bytes.len;
+    asm volatile (
+        \\ mov sp, %[stack_top]
 
         // Enable FP/NEON
-        \\     mrs x9, cpacr_el1
-        \\     mov x10, #0x300000
-        \\     orr x9, x9, x10
-        \\     msr cpacr_el1, x9
-        \\     isb
+        \\ mrs x9, cpacr_el1
+        \\ mov x10, #0x300000
+        \\ orr x9, x9, x10
+        \\ msr cpacr_el1, x9
+        \\ isb
 
         // Enter kernel_main
-        \\     bl kernel_main
-        \\     b .
-    );
+        \\ blr %[kernel_main]
+        \\ 1: b 1b
+        :
+        : [stack_top] "r" (stack_top),
+          [kernel_main] "r" (&kernel_main),
+        : .{
+          .x8 = true,
+          .x9 = true,
+          .x10 = true,
+          .memory = true,
+        });
 }
 
 const uart: *volatile u8 = @ptrFromInt(0x0900_0000);
