@@ -1,4 +1,8 @@
+const std = @import("std");
+const exception = @import("exception.zig");
 const kernel = @import("kernel.zig");
+
+pub const panic = std.debug.FullPanic(exception.panic);
 
 export var stack_bytes: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
 

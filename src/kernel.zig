@@ -1,7 +1,10 @@
 const DTB = @import("DTB.zig");
+const exception = @import("exception.zig");
 const uart = @import("uart.zig");
 
 pub export fn kernel_main() callconv(.c) void {
+    exception.init();
+
     const dtb: DTB = .{
         .ptr = @ptrFromInt(0x4000_0000),
     };
