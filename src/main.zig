@@ -4,9 +4,11 @@ const DTB = @import("DTB.zig");
 export var stack_bytes: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
 
 export fn _start() callconv(.naked) noreturn {
-    const stack_top = @intFromPtr(&stack_bytes) +% stack_bytes.len;
     asm volatile (
-        \\ mov sp, %[stack_top]
+        \\ adrp x8, stack_bytes
+        \\ add x8, x8, #:lo12:stack_bytes
+        \\ add x8, x8, %[stack_size]
+        \\ mov sp, x8
 
         // Enable FP/NEON
         \\ mrs x9, cpacr_el1
@@ -16,11 +18,10 @@ export fn _start() callconv(.naked) noreturn {
         \\ isb
 
         // Enter kernel_main
-        \\ blr %[kernel_main]
+        \\ bl kernel_main
         \\ 1: b 1b
         :
-        : [stack_top] "r" (stack_top),
-          [kernel_main] "r" (&kernel_main),
+        : [stack_size] "r" (stack_bytes.len),
         : .{
           .x8 = true,
           .x9 = true,
