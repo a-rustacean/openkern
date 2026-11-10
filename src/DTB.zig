@@ -37,17 +37,38 @@ pub const NodeRef = struct {
 };
 
 pub fn findNode(dtb: *const @This(), path: []const u8) ?NodeRef {
-    var iter = dtb.struct_tokens();
-    var path_iter = mem.splitScalar(u8, path, '/');
-    _ = path_iter.next();
+    if (path.len == 0 or path[0] != '/') {
+        return null;
+    }
+    if (path.len == 1) {
+        return .{ .offset = 0 };
+    }
 
+    var iter = dtb.struct_tokens();
+
+    // skip root node
+    while (true) {
+        switch (iter.next()) {
+            .nop => {},
+            .begin_node => {
+                _ = iter.node_name();
+                break;
+            },
+            else => return null,
+        }
+    }
+
+    var path_iter = mem.splitScalar(u8, path[1..], '/');
     var current_level_target_node = path_iter.next().?;
+    if (current_level_target_node.len == 0) {
+        return null;
+    }
+
     var skip_depth: u32 = 0;
+    const struct_start = @intFromPtr(dtb.ptr) + dtb.header(.off_dt_struct);
 
     while (true) {
-        const cursor_usize = @intFromPtr(iter.cursor);
-        const cursor: u32 = @intCast(cursor_usize);
-        const offset = cursor - dtb.header(.off_dt_struct);
+        const offset: u32 = @intCast(@intFromPtr(iter.cursor) - struct_start);
         const token = iter.next();
 
         switch (token) {
@@ -59,9 +80,11 @@ pub fn findNode(dtb: *const @This(), path: []const u8) ?NodeRef {
                 const name = iter.node_name();
                 if (skip_depth != 0) {
                     skip_depth += 1;
-                }
-                if (mem.eql(u8, name, current_level_target_node)) {
+                } else if (mem.eql(u8, name, current_level_target_node)) {
                     if (path_iter.next()) |child_target| {
+                        if (child_target.len == 0) {
+                            return null;
+                        }
                         current_level_target_node = child_target;
                     } else {
                         return .{ .offset = offset };
@@ -86,7 +109,7 @@ pub fn findNode(dtb: *const @This(), path: []const u8) ?NodeRef {
 
 pub fn getProperty(dtb: *const DTB, node: NodeRef, property: []const u8) ?[]const u8 {
     var iter: Token.Iterator = .{
-        .cursor = @ptrFromInt(dtb.header(.off_dt_struct) + node.offset),
+        .cursor = @ptrFromInt(@intFromPtr(dtb.ptr) + dtb.header(.off_dt_struct) + node.offset),
     };
     const token1 = iter.next();
     std.debug.assert(token1 == .begin_node);
@@ -198,3 +221,95 @@ pub const ReserveEntry = struct {
     address: u64,
     size: u64,
 };
+
+const test_blob_size = 148;
+
+fn putBe32(blob: []u8, offset: usize, value: u32) void {
+    mem.writeInt(u32, blob[offset..][0..4], value, .big);
+}
+
+fn putToken(blob: []u8, offset: *usize, kind: Token.Kind) void {
+    putBe32(blob, offset.*, @backingInt(kind));
+    offset.* += 4;
+}
+
+fn putBeginNode(blob: []u8, offset: *usize, name: []const u8) void {
+    putToken(blob, offset, .begin_node);
+    @memcpy(blob[offset.*..][0..name.len], name);
+    offset.* += mem.alignForward(usize, name.len + 1, 4);
+}
+
+fn putProperty(blob: []u8, offset: *usize, name_offset: u32, value: []const u8) void {
+    putToken(blob, offset, .prop);
+    putBe32(blob, offset.*, @intCast(value.len));
+    offset.* += 4;
+    putBe32(blob, offset.*, name_offset);
+    offset.* += 4;
+    @memcpy(blob[offset.*..][0..value.len], value);
+    offset.* += mem.alignForward(usize, value.len, 4);
+}
+
+fn initTestDtb(blob: []u8) void {
+    putBe32(blob, 0, 0xd00dfeed);
+    putBe32(blob, 4, test_blob_size);
+    putBe32(blob, 8, 56); // off_dt_struct
+    putBe32(blob, 12, 136); // off_dt_strings
+    putBe32(blob, 16, 40); // off_mem_rsvmap
+    putBe32(blob, 20, 17); // version
+    putBe32(blob, 24, 16); // last_comp_version
+    putBe32(blob, 28, 0); // boot_cpuid_phys
+    putBe32(blob, 32, 10); // size_dt_strings
+    putBe32(blob, 36, 80); // size_dt_struct
+
+    var offset: usize = 56;
+    putBeginNode(blob, &offset, "");
+    putBeginNode(blob, &offset, "a");
+    putBeginNode(blob, &offset, "c");
+    putBeginNode(blob, &offset, "b");
+    putToken(blob, &offset, .end_node);
+    putToken(blob, &offset, .end_node);
+    putBeginNode(blob, &offset, "b");
+    putProperty(blob, &offset, 0, &.{ 0xde, 0xad, 0xbe, 0xef });
+    putToken(blob, &offset, .end_node);
+    putToken(blob, &offset, .end_node);
+    putToken(blob, &offset, .end_node);
+    putToken(blob, &offset, .end);
+    std.debug.assert(offset == 136);
+
+    @memcpy(blob[136..][0..10], "test-prop\x00");
+}
+
+test "findNode ignores matching names in skipped subtrees" {
+    var blob: [test_blob_size]u8 align(4) = @splat(0);
+    initTestDtb(&blob);
+
+    const dtb: DTB = .{ .ptr = &blob };
+    try std.testing.expect(dtb.validate());
+
+    const direct = dtb.findNode("/a/b") orelse return error.TestExpectedNode;
+    try std.testing.expectEqual(@as(u32, 40), direct.offset);
+
+    const value = dtb.getProperty(direct, "test-prop") orelse return error.TestExpectedProperty;
+    try std.testing.expectEqualSlices(u8, &.{ 0xde, 0xad, 0xbe, 0xef }, value);
+    try std.testing.expect(dtb.getProperty(direct, "missing") == null);
+
+    const nested = dtb.findNode("/a/c/b") orelse return error.TestExpectedNode;
+    try std.testing.expectEqual(@as(u32, 24), nested.offset);
+
+    try std.testing.expect(dtb.findNode("/a/missing") == null);
+    try std.testing.expect(dtb.findNode("/missing") == null);
+}
+
+test "findNode handles root and invalid paths" {
+    var blob: [test_blob_size]u8 align(4) = @splat(0);
+    initTestDtb(&blob);
+
+    const dtb: DTB = .{ .ptr = &blob };
+
+    const root = dtb.findNode("/") orelse return error.TestExpectedNode;
+    try std.testing.expectEqual(@as(u32, 0), root.offset);
+
+    try std.testing.expect(dtb.findNode("") == null);
+    try std.testing.expect(dtb.findNode("a/b") == null);
+    try std.testing.expect(dtb.findNode("/a/") == null);
+}
