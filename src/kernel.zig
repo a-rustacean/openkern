@@ -5,8 +5,10 @@ const uart = @import("uart.zig");
 pub export fn kernel_main() callconv(.c) void {
     exception.init();
 
+    // bare metal boot path, DTB at ram start
+    const dtb_address = 0x4000_0000;
     const dtb: DTB = .{
-        .ptr = @ptrFromInt(0x4000_0000),
+        .ptr = @ptrFromInt(dtb_address),
     };
     if (!dtb.validate()) {
         return;
